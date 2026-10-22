@@ -24,24 +24,11 @@ def sombrear_celda(celda, color_hex):
     shd.set(qn('w:fill'), color_hex)
     tcPr.append(shd)
 
-def crear_tabla_datos(doc, titulo, datos, cabecera):
-    doc.add_heading(titulo, level=3).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    t = doc.add_table(rows=1, cols=len(cabecera))
-    t.style = 'Table Grid'
-    hdr = t.rows[0].cells
-    for i, text in enumerate(cabecera):
-        hdr[i].text = text
-        hdr[i].paragraphs[0].runs[0].bold = True
-        hdr[i].paragraphs[0].runs[0].font.size = Pt(8)
-        hdr[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
-        sombrear_celda(hdr[i], "0F766E")
-    for row_data in datos:
-        row = t.add_row().cells
-        for i, text in enumerate(row_data):
-            row[i].text = str(text)
-            row[i].paragraphs[0].runs[0].font.size = Pt(9)
-            if i == 0: row[i].paragraphs[0].runs[0].bold = True
-    doc.add_paragraph()
+def agregar_seccion(doc, titulo, texto=None):
+    doc.add_heading(titulo, level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    if texto:
+        p = doc.add_paragraph(texto)
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 def generar_graficos():
     # 1. Gráfico de Dona
@@ -84,12 +71,30 @@ def generar_graficos():
     fig2.savefig('somatocarta.png', dpi=200, transparent=True)
     plt.close(fig2)
 
+def crear_fila_tabla(doc, cabeceras, datos):
+    t = doc.add_table(rows=1, cols=len(cabeceras))
+    t.style = 'Table Grid'
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    hdr = t.rows[0].cells
+    for i, text in enumerate(cabeceras):
+        hdr[i].text = text
+        hdr[i].paragraphs[0].runs[0].bold = True
+        hdr[i].paragraphs[0].runs[0].font.size = Pt(8)
+        hdr[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+        sombrear_celda(hdr[i], "0F766E")
+    for row_data in datos:
+        row = t.add_row().cells
+        for i, text in enumerate(row_data):
+            row[i].text = str(text)
+            row[i].paragraphs[0].runs[0].font.size = Pt(9)
+    doc.add_paragraph()
+
 def generar_word():
     doc = Document()
     sections = doc.sections
     for section in sections:
-        section.top_margin = Inches(0.4)
-        section.bottom_margin = Inches(0.4)
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
         section.left_margin = Inches(0.6)
         section.right_margin = Inches(0.6)
 
@@ -118,75 +123,78 @@ def generar_word():
     doc.add_paragraph()
 
     # Paciente
-    tabla_paciente = doc.add_table(rows=2, cols=4)
-    tabla_paciente.style = 'Table Grid'
-    datos_paciente = [
-        ["PACIENTE", "EDAD", "FECHA", "DEPORTE"],
-        ["Miguel Claro", "26.14 años", "11-10-2025", "Baloncesto"]
-    ]
-    for i, fila in enumerate(datos_paciente):
+    t_pac = doc.add_table(rows=1, cols=4)
+    t_pac.style = 'Table Grid'
+    datos_pac = [["Paciente", "Miguel Claro", "Edad", "26.1 años"],
+                 ["Deporte", "Baloncesto", "Fecha", "11/10/2025"],
+                 ["Peso / Talla", "80.0 kg / 178.0 cm", "IMC", "25.2 kg/m²"]]
+    for i, fila in enumerate(datos_pac):
+        row = t_pac.add_row().cells if i > 0 else t_pac.rows[0].cells
         for j, texto in enumerate(fila):
-            celda = tabla_paciente.cell(i, j)
-            celda.text = texto
-            celda.paragraphs[0].runs[0].font.size = Pt(9)
-            if i == 0: 
-                celda.paragraphs[0].runs[0].bold = True
-                sombrear_celda(celda, "F8FAFC")
-            else:
-                celda.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            row[j].text = texto
+            row[j].paragraphs[0].runs[0].font.size = Pt(9)
+            if j % 2 == 0:  # Títulos en negrita
+                row[j].paragraphs[0].runs[0].bold = True
     doc.add_paragraph()
 
+    # 1. Fraccionamiento
+    agregar_seccion(doc, "1. Fraccionamiento Corporal de 5 Componentes (D. Kerr, 1988)")
+    crear_fila_tabla(doc, 
+        ["Componente", "Resultado", "Referencia", "Interpretación Kinésica"],
+        [
+            ("Masa Muscular", "45.8 kg (57.2%)", "50.8% - 54.2%", "Desarrollo muscular sobresaliente. Alta capacidad de fuerza y potencia."),
+            ("Masa Adiposa", "12.4 kg (15.4%)", "< 16.6%", "Excelente. Nivel bajo de grasa subcutánea, optimiza la agilidad."),
+            ("Masa Ósea", "9.1 kg (11.4%)", "11.0% - 13.0%", "Estructura ósea dentro de rangos fisiológicos estandarizados."),
+            ("Masa Residual", "9.0 kg (11.3%)", "10.0% - 12.0%", "Masa visceral y órganos dentro de límites normales."),
+            ("Masa de la Piel", "3.7 kg (4.7%)", "4.0% - 5.0%", "Tejido epitelial acorde a la superficie corporal."),
+            ("Índice Músculo/Óseo", "5.02", "> 4.55", "Excelente eficiencia estructural."),
+            ("Índice Adiposo/Muscular", "0.27", "< 0.36", "Ratio óptimo con claro predominio de tejido activo.")
+        ]
+    )
+
     # Gráficos
-    doc.add_heading('1. Análisis Visual', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    doc.add_heading('Análisis Visual', level=3).runs[0].font.color.rgb = RGBColor(15, 118, 110)
     tabla_graficos = doc.add_table(rows=1, cols=2)
     tabla_graficos.alignment = WD_TABLE_ALIGNMENT.CENTER
-    celda_izq = tabla_graficos.cell(0, 0)
-    run_img1 = celda_izq.paragraphs[0].add_run()
+    run_img1 = tabla_graficos.cell(0, 0).paragraphs[0].add_run()
     run_img1.add_picture('grafico_torta.png', width=Inches(3.0))
-    celda_der = tabla_graficos.cell(0, 1)
-    run_img2 = celda_der.paragraphs[0].add_run()
+    run_img2 = tabla_graficos.cell(0, 1).paragraphs[0].add_run()
     run_img2.add_picture('somatocarta.png', width=Inches(3.0))
     doc.add_paragraph()
 
-    # 5 Masas (CON INTERPRETACIÓN)
-    doc.add_heading('2. Fraccionamiento en 5 Masas (D. Kerr)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    crear_tabla_datos(doc, "Composición Corporal", [
-        ("Muscular", "45.8 kg (57.2%)", ">54.2%", "Desarrollo sobresaliente. Alta capacidad de fuerza."),
-        ("Adiposa", "12.4 kg (15.4%)", "<16.6%", "Excelente. Nivel bajo de grasa, optimiza agilidad."),
-        ("Ósea", "9.1 kg (11.4%)", "11-13%", "Estructura dentro de rangos fisiológicos."),
-        ("Residual", "9.0 kg (11.3%)", "10-12%", "Masa visceral dentro de límites normales."),
-        ("Piel", "3.7 kg (4.7%)", "4-5%", "Tejido epitelial acorde a superficie corporal.")
-    ], ["Componente", "Resultado", "Referencia", "Interpretación Kinésica"])
+    # 2. Somatotipo
+    agregar_seccion(doc, "2. Análisis de Somatotipo y Perfil Morfológico (Heath & Carter)")
+    crear_fila_tabla(doc,
+        ["Componente", "Valor", "Referencia Deporte", "Clasificación / Interpretación"],
+        [
+            ("Endomorfia (Grasa)", "1.4", "2.1 (Moderada)", "Baja acumulación subcutánea; relieve muscular visible."),
+            ("Mesomorfia (Músculo)", "8.1", "4.5 (Alta)", "Dominancia mesomórfica absoluta. Gran masa muscular y robustez."),
+            ("Ectomorfia (Linealidad)", "1.7", "3.5 (Moderada)", "Estructura densa y compacta por unidad de altura."),
+            ("Clasificación Global", "Mesomorfo Puro", "Meso-Ectomorfo", "Perfil fuertemente orientado a la fuerza explosiva.")
+        ]
+    )
 
-    # Somatotipo
-    doc.add_heading('3. Somatotipo (Heath & Carter)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    crear_tabla_datos(doc, "Análisis Morfológico", [
-        ("Endomorfia", "1.4", "2.1 (Mod.)", "Baja acumulación subcutánea."),
-        ("Mesomorfia", "8.1", "4.5 (Alta)", "Dominancia mesomórfica absoluta. Gran masa muscular."),
-        ("Ectomorfia", "1.7", "3.5 (Mod.)", "Estructura densa y compacta."),
-        ("Global", "Mesomorfo Puro", "Meso-Ectomorfo", "Perfil orientado a fuerza explosiva.")
-    ], ["Componente", "Valor", "Ref. Deporte", "Clasificación"])
+    # 3. Cardiometabólico
+    agregar_seccion(doc, "3. Indicadores Cardiometabólicos y Prescripción Energética")
+    crear_fila_tabla(doc,
+        ["Indicador Fisiológico", "Resultado", "Rango de Referencia", "Diagnóstico / Observación Kinésica"],
+        [
+            ("Índice Cintura / Cadera", "0.78", "< 0.83 (Bajo Riesgo)", "Riesgo cardiovascular y acumulación de grasa visceral muy bajos."),
+            ("Suma 6 Pliegues Cutáneos", "35.9 mm", "< 45.0 mm", "Excelente perfil magro en tejido subcutáneo."),
+            ("Metabolismo Basal (MB)", "1801 kcal", "Harris & Benedict", "Gasto energético mínimo en reposo para soporte vital."),
+            ("Gasto Energético Total (GET)", "3782 kcal", "Actividad Intensa (x2.1)", "Requerimiento calórico estimado para sostener volumen de entrenamiento.")
+        ]
+    )
 
-    # Cardiometabólico
-    doc.add_heading('4. Indicadores Cardiometabólicos', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    crear_tabla_datos(doc, "Salud y Energía", [
-        ("ICC", "0.78", "<0.83 (Bajo)", "Riesgo cardiovascular muy bajo."),
-        ("Suma 6 Pliegues", "35.9 mm", "<45.0 mm", "Excelente perfil magro."),
-        ("Metabolismo Basal", "1801 kcal", "Harris-Benedict", "Gasto mínimo en reposo."),
-        ("Gasto Total (GET)", "3782 kcal", "Intensa (x2.1)", "Requerimiento para sostener entrenamiento.")
-    ], ["Indicador", "Resultado", "Referencia", "Observación Kinésica"])
-
-    # Conclusión
-    doc.add_heading('5. Diagnóstico y Recomendaciones', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    # 4. Conclusión
+    agregar_seccion(doc, "4. Conclusión Fisiológica y Recomendaciones de Carga")
     p_interp = doc.add_paragraph(
-        "Diagnóstico Kinésico: El evaluado presenta una composición corporal altamente eficiente para el rendimiento deportivo, "
-        "destacando un desarrollo muscular sobresaliente (57.2%) e índices de adiposidad mínimos (15.4%). "
-        "Su perfil somatotípico se clasifica como Mesomorfo Puro (1.4-8.1-1.7), otorgándole una ventaja mecánica "
-        "notable para deportes de fuerza, potencia y aceleración/desaceleración rápida.\n\n"
-        "Recomendaciones:\n"
-        "1. Mantenimiento Estructural: Preservar la masa muscular activa mediante sobrecarga progresiva.\n"
-        "2. Soporte Energético: Ajustar ingesta calórica al GET (~3782 kcal/día) para evitar déficit.\n"
-        "3. Monitoreo: Reevaluar en 8 a 12 semanas para cuantificar adaptaciones."
+        "Diagnóstico Kinésico-Antropométrico:\n"
+        "El evaluado presenta una composición corporal altamente eficiente para el rendimiento deportivo, destacando un desarrollo muscular sobresaliente (57.2% de masa muscular total) e índices de adiposidad mínimos (15.4% de masa adiposa). Su perfil somatotípico se clasifica como Mesomorfo Puro (1.4-8.1-1.7), lo que le otorga una ventaja mecánica notable para deportes de fuerza, potencia y aceleración/desaceleración rápida.\n\n"
+        "Recomendaciones de Prescripción & Nutrición:\n"
+        "1. Mantenimiento Estructural: Preservar la alta masa muscular activa mediante trabajo de fuerza con sobrecarga progresiva y consumo proteico adecuado.\n"
+        "2. Soporte Energético: Ajustar la ingesta calórica al Gasto Energético Total estimado (~3782 kcal/día) para evitar estados de déficit involuntario que comprometan la masa magra.\n"
+        "3. Monitoreo Fisiológico: Se recomienda reevaluar en un período de 8 a 12 semanas para cuantificar las adaptaciones específicas del ciclo de entrenamiento."
     )
     p_interp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
