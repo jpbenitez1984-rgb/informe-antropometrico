@@ -8,13 +8,14 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-import os
+import io
 
 st.set_page_config(page_title="Informes Antropométricos", page_icon="📊", layout="wide")
 
 st.title("Informes Antropométricos")
 st.subheader("Ciencia aplicada al rendimiento y la salud")
 
+# --- FUNCIONES AUXILIARES PARA WORD ---
 def sombrear_celda(celda, color_hex):
     tcPr = celda._element.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
@@ -42,8 +43,9 @@ def crear_tabla_datos(doc, titulo, datos, cabecera):
             if i == 0: row[i].paragraphs[0].runs[0].bold = True
     doc.add_paragraph()
 
+# --- GENERADOR DE GRÁFICOS ---
 def generar_graficos():
-    # Dona
+    # Gráfico de Dona
     labels = ['Músculo', 'Grasa', 'Residual', 'Hueso', 'Piel']
     sizes = [45.75, 12.35, 9.03, 9.11, 3.75]
     colors = ['#0F766E', '#E11D48', '#94A3B8', '#CBD5E1', '#F1F5F9']
@@ -83,6 +85,7 @@ def generar_graficos():
     fig2.savefig('somatocarta.png', dpi=200, transparent=True)
     plt.close(fig2)
 
+# --- GENERADOR DEL WORD COMPLETO ---
 def generar_word():
     doc = Document()
     sections = doc.sections
@@ -147,19 +150,37 @@ def generar_word():
     run_img2.add_picture('somatocarta.png', width=Inches(3.0))
     doc.add_paragraph()
 
-    # Tablas
-    doc.add_heading('2. Datos Antropométricos', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    # 5 Masas
+    doc.add_heading('2. Fraccionamiento en 5 Masas (D. Kerr)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    crear_tabla_datos(doc, "Composición Corporal", [
+        ("Músculo", "45.75", "57.2%", "3.55"),
+        ("Grasa", "12.35", "15.4%", "-2.36"),
+        ("Residual", "9.03", "11.3%", "2.51"),
+        ("Hueso", "9.11", "11.4%", "0.55"),
+        ("Piel", "3.75", "4.7%", "-")
+    ], ["Masa", "Kg", "%", "Score-Z"])
+
+    # Datos Antropométricos (Resumen)
+    doc.add_heading('3. Datos Antropométricos', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
     crear_tabla_datos(doc, "Básicos y Diámetros (cm)", [
         ("Peso (kg)", "80.00", "69.91", "0.05", "0.62"),
         ("Talla (cm)", "178.00", "-", "0.11", "-"),
         ("Talla Sentado (cm)", "92.00", "87.96", "0.23", "-0.44"),
-        ("Biacromial", "42.00", "40.15", "0.39", "1.10"),
-        ("Tórax Transverso", "36.50", "34.90", "0.61", "4.01"),
-        ("Tórax A-P", "22.00", "21.03", "0.68", "2.56")
+        ("Biacromial", "42.00", "40.15", "0.39", "1.10")
     ], ["Variable", "Resultado", "Ajustado", "%ETM", "Score-Z"])
 
+    # Índices y Metabolismo
+    doc.add_heading('4. Índices y Metabolismo', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    crear_tabla_datos(doc, "Indicadores Clave", [
+        ("IMC", "25.2", "Normal: 18.5-24.9 | Sobrepeso: 25-29.9"),
+        ("ICC", "0.78", "Bajo Riesgo: <0.83"),
+        ("Músculo/Óseo", "5.02", "Excelente: >4.55"),
+        ("Adiposo/Muscular", "0.27", "Excelente: <0.36"),
+        ("Gasto Calórico Total", "3782 kcal", "Nivel Intenso (x2.1)")
+    ], ["Indicador", "Valor", "Referencia"])
+
     # Conclusión y Firma
-    doc.add_heading('3. Interpretación Clínica', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    doc.add_heading('5. Interpretación Clínica', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
     p_interp = doc.add_paragraph(
         "Miguel presenta un perfil de composición corporal de élite para el Baloncesto (Mesomorfia 8.1). "
         "Su % de grasa es excelente (15.4%) y su índice Adiposo/Muscular es óptimo. "
@@ -198,8 +219,8 @@ if archivo is not None:
             st.success("¡Informe generado con éxito!")
             
             st.download_button(
-                label="📥 Descargar Informe en Word",
+                label="📥 Descargar Informe Completo en Word",
                 data=doc_bytes,
-                file_name="Informe_Antropometrico_Premium.docx",
+                file_name="Informe_Composicion_Completo.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
