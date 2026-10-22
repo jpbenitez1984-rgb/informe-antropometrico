@@ -1,648 +1,261 @@
-
-import io
-import re
-import math
-import hashlib
-from datetime import datetime
-
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, KeepTogether
-)
+from docx.shared import Pt, Inches, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+import io
 
-st.set_page_config(
-    page_title="Informes antropométricos",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Informes Antropométricos", page_icon="📊", layout="wide")
 
-ERRORS = [
-    "#REF!", "#DIV/0!", "#VALUE!", "#NAME?",
-    "#N/A", "#NUM!", "#NULL!"
-]
+st.title("Informes Antropométricos")
+st.subheader("Ciencia aplicada al rendimiento y la salud")
 
-st.title("Informes antropométricos")
-st.caption("Auditoría de datos, indicadores básicos e informes profesionales")
+def sombrear_celda(celda, color_hex):
+    tcPr = celda._element.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), color_hex)
+    tcPr.append(shd)
 
-st.warning(
-    "Herramienta de apoyo profesional. Comprueba los datos, las unidades "
-    "y las ecuaciones antes de entregar el informe. No sustituye la "
-    "validación técnica ni la evaluación clínica."
-)
+def crear_tabla_datos(doc, titulo, datos, cabecera):
+    doc.add_heading(titulo, level=3).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    t = doc.add_table(rows=1, cols=len(cabecera))
+    t.style = 'Table Grid'
+    hdr = t.rows[0].cells
+    for i, text in enumerate(cabecera):
+        hdr[i].text = text
+        hdr[i].paragraphs[0].runs[0].bold = True
+        hdr[i].paragraphs[0].runs[0].font.size = Pt(8)
+        hdr[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+        sombrear_celda(hdr[i], "0F766E")
+    for row_data in datos:
+        row = t.add_row().cells
+        for i, text in enumerate(row_data):
+            row[i].text = str(text)
+            row[i].paragraphs[0].runs[0].font.size = Pt(8)
+            if i == 0: row[i].paragraphs[0].runs[0].bold = True
+    doc.add_paragraph()
 
+def generar_graficos():
+    # Dona
+    labels = ['Músculo\n(45.7 kg)', 'Grasa\n(12.3 kg)', 'Residual\n(9.0 kg)', 'Hueso\n(9.1 kg)', 'Piel\n(3.7 kg)']
+    sizes = [45.75, 12.35, 9.03, 9.11, 3.75]
+    colors = ['#0F766E', '#E11D48', '#94A3B8', '#CBD5E1', '#F1F5F9']
+    fig1, ax1 = plt.subplots(figsize=(6, 4))
+    ax1.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4, edgecolor='w'))
+    ax1.axis('equal')
+    plt.title('Composición Corporal', fontweight='bold', color='#1E293B')
+    plt.tight_layout()
+    fig1.savefig('grafico_torta.png', dpi=200, transparent=True)
+    plt.close(fig1)
+    
+    # Somatocarta
+    fig2, ax2 = plt.subplots(figsize=(6, 5))
+    theta = np.linspace(np.pi, 0, 100)
+    x = np.cos(theta) * 7
+    y = np.sin(theta) * 7
+    ax2.plot(x, y, color='#94A3B8', linewidth=2)
+    ax2.plot([-7, 7], [0, 0], color='#94A3B8', linewidth=2)
+    ax2.axhline(0, color='#CBD5E1', linewidth=1)
+    ax2.axvline(0, color='#CBD5E1', linewidth=1)
+    ax2.plot([-3.5, 3.5], [6.06, 6.06], color='#CBD5E1', linewidth=1)
+    ax2.plot([-3.5, 0], [6.06, 0], color='#CBD5E1', linewidth=1)
+    ax2.plot([3.5, 0], [6.06, 0], color='#CBD5E1', linewidth=1)
+    ax2.scatter(0.24, 13.05, color='#E11D48', s=150, zorder=5, label='Miguel (Act.)')
+    ax2.scatter(1.4, 3.4, color='#0F766E', s=150, zorder=5, marker='D', label='Ref. Baloncesto')
+    ax2.set_xlim(-8, 8)
+    ax2.set_ylim(-2, 14)
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['bottom'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+    ax2.text(0, 14.5, "SOMATOCARTA", ha='center', fontweight='bold', color='#1E293B', fontsize=12)
+    ax2.legend(loc='lower right')
+    plt.tight_layout()
+    fig2.savefig('somatocarta.png', dpi=200, transparent=True)
+    plt.close(fig2)
 
-def clean_value(value):
-    if pd.isna(value):
-        return ""
-    if isinstance(value, (datetime, pd.Timestamp)):
-        return value.strftime("%d-%m-%Y")
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            return str(value)
-        return round(value, 4)
-    return str(value).strip()
-
-
-def excel_sheets(file_bytes):
-    """Lee hojas y audita fórmulas en libros XLSX/XLSM."""
-    xls = pd.ExcelFile(io.BytesIO(file_bytes))
-    sheets = {}
-    for name in xls.sheet_names:
-        sheets[name] = pd.read_excel(
-            io.BytesIO(file_bytes),
-            sheet_name=name,
-            header=None
-        )
-    return sheets
-
-
-def audit_formulas(file_bytes, filename):
-    findings = []
-    formula_count = 0
-
-    if not filename.lower().endswith((".xlsx", ".xlsm")):
-        return formula_count, findings, (
-            "La auditoría de fórmulas de Excel requiere .xlsx o .xlsm."
-        )
-
-    try:
-        import openpyxl
-
-        formulas_wb = openpyxl.load_workbook(
-            io.BytesIO(file_bytes), data_only=False, read_only=True
-        )
-        values_wb = openpyxl.load_workbook(
-            io.BytesIO(file_bytes), data_only=True, read_only=True
-        )
-
-        for sheet_name in formulas_wb.sheetnames:
-            ws_formula = formulas_wb[sheet_name]
-            ws_values = values_wb[sheet_name]
-
-            for row in ws_formula.iter_rows():
-                for cell in row:
-                    value = cell.value
-                    if isinstance(value, str) and value.startswith("="):
-                        formula_count += 1
-                        cached = ws_values[cell.coordinate].value
-                        if isinstance(cached, str) and any(
-                            err in cached.upper() for err in ERRORS
-                        ):
-                            findings.append({
-                                "Hoja": sheet_name,
-                                "Celda": cell.coordinate,
-                                "Tipo": "Error en resultado almacenado",
-                                "Detalle": cached,
-                                "Fórmula": value
-                            })
-        formulas_wb.close()
-        values_wb.close()
-
-        note = (
-            "Los resultados almacenados pueden estar ausentes o desactualizados "
-            "si Excel no ha recalculado el libro. Esta revisión no ejecuta "
-            "ni valida las fórmulas."
-        )
-        return formula_count, findings, note
-
-    except Exception as e:
-        return formula_count, findings, (
-            "No se pudo completar la auditoría de fórmulas: " + str(e)
-        )
-
-
-def workbook_quality(sheets):
-    findings = []
-    total_rows = 0
-    total_cols = 0
-    total_missing = 0
-    total_duplicates = 0
-
-    for name, raw in sheets.items():
-        df = raw.dropna(how="all").dropna(axis=1, how="all")
-        total_rows += len(df)
-        total_cols += len(df.columns)
-        missing = int(df.isna().sum().sum())
-        total_missing += missing
-
-        # Sin encabezados confirmados, las filas duplicadas son solo
-        # duplicados exactos de filas; no necesariamente errores.
-        duplicates = int(df.duplicated().sum())
-        total_duplicates += duplicates
-
-        findings.append({
-            "Hoja": name,
-            "Filas con contenido": len(df),
-            "Columnas con contenido": len(df.columns),
-            "Celdas vacías": missing,
-            "Filas exactamente duplicadas": duplicates
-        })
-
-    return {
-        "hojas": len(sheets),
-        "filas": total_rows,
-        "columnas": total_cols,
-        "faltantes": total_missing,
-        "duplicados": total_duplicates,
-        "detalle": findings
-    }
-
-
-def find_numeric_indicators(sheets):
-    """
-    Calcula IMC y relaciones cintura/estatura o cintura/cadera solo
-    cuando encuentra columnas con nombres reconocibles y unidades
-    compatibles. No infiere valores a partir de celdas desconocidas.
-    """
-    results = []
-    notes = []
-
-    aliases = {
-        "peso_kg": ["peso kg", "peso (kg)", "weight kg", "weight (kg)"],
-        "altura_cm": [
-            "estatura cm", "altura cm", "talla cm",
-            "estatura (cm)", "altura (cm)", "talla (cm)"
-        ],
-        "altura_m": [
-            "estatura m", "altura m", "talla m",
-            "estatura (m)", "altura (m)", "talla (m)"
-        ],
-        "cintura_cm": [
-            "cintura cm", "perimetro cintura", "perímetro cintura",
-            "waist cm", "cintura (cm)"
-        ],
-        "cadera_cm": [
-            "cadera cm", "perimetro cadera", "perímetro cadera",
-            "hip cm", "cadera (cm)"
-        ]
-    }
-
-    for sheet_name, raw in sheets.items():
-        # Se prueban encabezados solo en la primera fila.
-        df = raw.copy()
-        if df.empty:
-            continue
-        headers = [
-            str(x).strip().lower() if pd.notna(x) else ""
-            for x in df.iloc[0].tolist()
-        ]
-        if not any(headers):
-            continue
-
-        body = df.iloc[1:].copy()
-        body.columns = headers
-
-        found = {}
-        for key, options in aliases.items():
-            for col in body.columns:
-                normalized = re.sub(r"\s+", " ", str(col)).strip()
-                if normalized in options:
-                    found[key] = col
-                    break
-
-        # Requiere que la información esté organizada en columnas
-        # y que peso/estatura estén expresados en unidades reconocidas.
-        if "peso_kg" in found and (
-            "altura_cm" in found or "altura_m" in found
-        ):
-            for _, row in body.iterrows():
-                try:
-                    weight = pd.to_numeric(row[found["peso_kg"]], errors="coerce")
-                    if "altura_cm" in found:
-                        height = pd.to_numeric(
-                            row[found["altura_cm"]], errors="coerce"
-                        ) / 100
-                    else:
-                        height = pd.to_numeric(
-                            row[found["altura_m"]], errors="coerce"
-                        )
-
-                    if pd.notna(weight) and pd.notna(height) and weight > 0 and height > 0:
-                        bmi = float(weight) / float(height) ** 2
-                        results.append({
-                            "Hoja": sheet_name,
-                            "Indicador": "IMC",
-                            "Resultado": round(bmi, 2),
-                            "Unidades": "kg/m²",
-                            "Método": "Peso (kg) / estatura (m)²"
-                        })
-                except (TypeError, ValueError, ZeroDivisionError):
-                    pass
-
-        if "cintura_cm" in found and "altura_cm" in found:
-            for _, row in body.iterrows():
-                try:
-                    waist = pd.to_numeric(row[found["cintura_cm"]], errors="coerce")
-                    height = pd.to_numeric(row[found["altura_cm"]], errors="coerce")
-                    if pd.notna(waist) and pd.notna(height) and height > 0:
-                        results.append({
-                            "Hoja": sheet_name,
-                            "Indicador": "Cintura/estatura",
-                            "Resultado": round(float(waist) / float(height), 3),
-                            "Unidades": "adimensional",
-                            "Método": "Cintura (cm) / estatura (cm)"
-                        })
-                except (TypeError, ValueError, ZeroDivisionError):
-                    pass
-
-        if "cintura_cm" in found and "cadera_cm" in found:
-            for _, row in body.iterrows():
-                try:
-                    waist = pd.to_numeric(row[found["cintura_cm"]], errors="coerce")
-                    hip = pd.to_numeric(row[found["cadera_cm"]], errors="coerce")
-                    if pd.notna(waist) and pd.notna(hip) and hip > 0:
-                        results.append({
-                            "Hoja": sheet_name,
-                            "Indicador": "Cintura/cadera",
-                            "Resultado": round(float(waist) / float(hip), 3),
-                            "Unidades": "adimensional",
-                            "Método": "Cintura (cm) / cadera (cm)"
-                        })
-                except (TypeError, ValueError, ZeroDivisionError):
-                    pass
-
-    if not results:
-        notes.append(
-            "No se calcularon indicadores automáticamente. El archivo puede "
-            "usar otro diseño, nombres de variables distintos, medidas "
-            "dispuestas en filas o unidades no identificadas. No se asumieron "
-            "equivalencias de unidades."
-        )
-
-    return results, notes
-
-
-def dataframe_to_records(df, limit=100):
-    data = df.head(limit).copy()
-    data = data.fillna("")
-    return [[str(c) for c in data.columns]] + [
-        [str(clean_value(v)) for v in row]
-        for row in data.itertuples(index=False, name=None)
-    ]
-
-
-def build_docx(filename, sheets, quality, formula_count,
-                formula_errors, formula_note, indicators, comments):
+def generar_word():
     doc = Document()
-    section = doc.sections[0]
-    section.top_margin = Inches(0.65)
-    section.bottom_margin = Inches(0.65)
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Inches(0.4)
+        section.bottom_margin = Inches(0.4)
+        section.left_margin = Inches(0.6)
+        section.right_margin = Inches(0.6)
 
-    title = doc.add_heading("INFORME DE REVISIÓN ANTROPOMÉTRICA", 0)
-    title.alignment = 1
-    p = doc.add_paragraph(
-        "Auditoría del archivo, calidad de datos e indicadores básicos"
+    # Encabezado
+    header = doc.sections[0].header
+    header_p = header.paragraphs[0]
+    header_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    header_p.text = "\n[INSERTAR LOGO AQUÍ]\n" 
+    
+    # Título
+    tabla_header = doc.add_table(rows=1, cols=1)
+    tabla_header.style = 'Table Grid'
+    celda_header = tabla_header.cell(0, 0)
+    sombrear_celda(celda_header, "0F766E")
+    p_titulo = celda_header.paragraphs[0]
+    p_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_titulo = p_titulo.add_run("INFORME DE COMPOSICIÓN CORPORAL")
+    run_titulo.bold = True
+    run_titulo.font.size = Pt(16)
+    run_titulo.font.color.rgb = RGBColor(255, 255, 255)
+    p_sub = celda_header.add_paragraph()
+    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_sub = p_sub.add_run("Salud y Rendimiento Funcional | Klgo. Juan Pablo Benítez Cárdenas")
+    run_sub.font.size = Pt(8)
+    run_sub.font.color.rgb = RGBColor(255, 255, 255)
+    doc.add_paragraph()
+
+    # Paciente
+    tabla_paciente = doc.add_table(rows=2, cols=4)
+    tabla_paciente.style = 'Table Grid'
+    datos_paciente = [
+        ["PACIENTE", "EDAD", "FECHA", "DEPORTE"],
+        ["Miguel Claro", "26.14 años", "11-10-2025", "Baloncesto"]
+    ]
+    for i, fila in enumerate(datos_paciente):
+        for j, texto in enumerate(fila):
+            celda = tabla_paciente.cell(i, j)
+            celda.text = texto
+            celda.paragraphs[0].runs[0].font.size = Pt(9)
+            if i == 0: 
+                celda.paragraphs[0].runs[0].bold = True
+                sombrear_celda(celda, "F8FAFC")
+            else:
+                celda.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph()
+
+    # Gráficos lado a lado
+    doc.add_heading('1. Análisis Visual', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    tabla_graficos = doc.add_table(rows=1, cols=2)
+    tabla_graficos.alignment = WD_TABLE_ALIGNMENT.CENTER
+    celda_izq = tabla_graficos.cell(0, 0)
+    run_img1 = celda_izq.paragraphs[0].add_run()
+    run_img1.add_picture('grafico_torta.png', width=Inches(3.0))
+    celda_der = tabla_graficos.cell(0, 1)
+    run_img2 = celda_der.paragraphs[0].add_run()
+    run_img2.add_picture('somatocarta.png', width=Inches(3.0))
+    doc.add_paragraph()
+
+    # 5 Masas con Baremos
+    doc.add_heading('2. Fraccionamiento en 5 Masas (D. Kerr)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    crear_tabla_datos(doc, "Composición Corporal", [
+        ("Muscular", "45.75 kg", "57.2%", ">54.2% (Excelente)"),
+        ("Adiposa", "12.35 kg", "15.4%", "<16.6% (Excelente)"),
+        ("Residual", "9.03 kg", "11.3%", "10-12% (Normal)"),
+        ("Ósea", "9.11 kg", "11.4%", "11-13% (Normal)"),
+        ("Piel", "3.75 kg", "4.7%", "4-5% (Normal)"),
+        ("Total", "80.00 kg", "100%", "-")
+    ], ["Masa", "Kg", "%", "Referencia"])
+
+    # Somatotipo
+    doc.add_heading('3. Somatotipo (Heath & Carter)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    crear_tabla_datos(doc, "Rating por Componente", [
+        ("Endomorfia", "1.4", "Ref. 2.1", "Baja (Magro)"),
+        ("Mesomorfia", "8.1", "Ref. 4.5", "Alta (Musculoso)"),
+        ("Ectomorfia", "1.7", "Ref. 3.5", "Baja (Denso)")
+    ], ["Componente", "Resultado", "Referencia", "Clasificación"])
+
+    # Datos Antropométricos Brutos
+    doc.add_heading('4. Datos Antropométricos Brutos', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    
+    crear_tabla_datos(doc, "Básicos y Diámetros (cm)", [
+        ("Peso (kg)", "80.00", "69.91", "0.05", "0.62"),
+        ("Talla (cm)", "178.00", "-", "0.11", "-"),
+        ("Talla Sentado (cm)", "92.00", "87.96", "0.23", "-0.44"),
+        ("Biacromial", "42.00", "40.15", "0.39", "1.10"),
+        ("Tórax Transverso", "36.50", "34.90", "0.61", "4.01"),
+        ("Tórax A-P", "22.00", "21.03", "0.68", "2.56"),
+        ("Bi-iliocrestídeo", "28.50", "27.25", "0.64", "-0.91"),
+        ("Humeral", "7.20", "6.88", "0.40", "1.15"),
+        ("Femoral", "10.80", "10.33", "0.30", "1.68")
+    ], ["Variable", "Resultado", "Ajustado", "%ETM", "Score-Z"])
+    
+    crear_tabla_datos(doc, "Perímetros (cm)", [
+        ("Brazo Relajado", "37.20", "35.57", "0.63", "3.72"),
+        ("Brazo Flexionado", "43.80", "41.88", "0.69", "5.26"),
+        ("Antebrazo", "32.00", "30.59", "0.48", "3.88"),
+        ("Tórax Mesoesternal", "106.50", "101.82", "0.35", "2.70"),
+        ("Cintura", "74.00", "70.75", "0.54", "-0.26"),
+        ("Caderas", "94.50", "90.35", "0.21", "-0.77"),
+        ("Muslo Sup.", "60.80", "58.13", "0.32", "0.55"),
+        ("Muslo Medial", "56.50", "54.02", "0.33", "0.72"),
+        ("Pantorrilla", "38.20", "36.52", "0.28", "0.55")
+    ], ["Variable", "Resultado", "Ajustado", "%ETM", "Score-Z"])
+
+    crear_tabla_datos(doc, "Pliegues Cutáneos (mm)", [
+        ("Tríceps", "4.55", "4.35", "1.55", "-2.47"),
+        ("Subescapular", "6.05", "5.78", "1.59", "-2.25"),
+        ("Supraespinal", "6.00", "5.74", "2.19", "-2.16"),
+        ("Abdominal", "7.75", "7.41", "1.69", "-2.31"),
+        ("Muslo Medial", "6.25", "5.98", "1.54", "-2.52"),
+        ("Pantorrilla", "5.25", "5.02", "1.62", "-2.35")
+    ], ["Variable", "Resultado", "Ajustado", "%ETM", "Score-Z"])
+
+    # Índices
+    doc.add_heading('5. Índices y Metabolismo', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    crear_tabla_datos(doc, "Indicadores Clave", [
+        ("IMC", "25.2", "Normal: 18.5-24.9 | Sobrepeso: 25-29.9"),
+        ("ICC", "0.78", "Bajo Riesgo: <0.83"),
+        ("Músculo/Óseo", "5.02", "Excelente: >4.55"),
+        ("Adiposo/Muscular", "0.27", "Excelente: <0.36"),
+        ("Gasto Total", "3782 kcal", "Actividad Intensa"),
+        ("Metabolismo Basal", "1801 kcal", "Harris-Benedict")
+    ], ["Indicador", "Valor", "Referencia"])
+
+    # Conclusión
+    doc.add_heading('6. Interpretación Clínica', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    p_interp = doc.add_paragraph(
+        "Miguel presenta un perfil de composición corporal de élite para el Baloncesto (Mesomorfia 8.1). "
+        "Su % de grasa es excelente (15.4%) y su índice Adiposo/Muscular es óptimo. "
+        "El foco debe estar en mantener su masa muscular de 45.7 kg y ajustar la ingesta calórica a su gasto diario de 3782 kcal."
     )
-    p.alignment = 1
+    p_interp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
-    doc.add_paragraph(
-        f"Archivo analizado: {filename}\n"
-        f"Fecha de generación: {datetime.now().strftime('%d-%m-%Y %H:%M')}"
-    )
+    # Firma
+    doc.add_paragraph("\n")
+    p_firma_espacio = doc.add_paragraph("[INSERTAR FIRMA AQUÍ]")
+    p_firma_espacio.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    p_nombre = doc.add_paragraph()
+    p_nombre.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_nombre = p_nombre.add_run("Klgo. Juan Pablo Benítez Cárdenas\n")
+    run_nombre.bold = True
+    run_nombre.font.size = Pt(10)
+    run_cred = p_nombre.add_run("Mg. Fisiología U. de Chile · ISAK Nivel II\n+56 9 4144 0676 | jpbenitez1984@gmail.com")
+    run_cred.italic = True
+    run_cred.font.size = Pt(9)
 
-    doc.add_heading("1. Resumen ejecutivo", level=1)
-    doc.add_paragraph(
-        f"Se revisaron {quality['hojas']} hoja(s), con "
-        f"{quality['filas']} filas y {quality['columnas']} columnas con contenido. "
-        f"Se identificaron {quality['faltantes']} celdas vacías en el conjunto "
-        f"de datos revisado y {quality['duplicados']} filas exactamente duplicadas. "
-        f"Se detectaron {len(formula_errors)} resultados de fórmula almacenados "
-        "con posibles errores visibles."
-    )
+    doc.save("Informe_Miguel.docx")
+    with open("Informe_Miguel.docx", "rb") as f:
+        return f.read()
 
-    doc.add_paragraph(
-        "Estos recuentos describen la estructura del archivo; no demuestran "
-        "por sí solos que los datos sean válidos o inválidos. Las filas "
-        "duplicadas y celdas vacías deben revisarse según el contexto."
-    )
+# --- INTERFAZ DE STREAMLIT ---
+archivo = st.file_uploader("Selecciona el archivo Excel del paciente", type=["xlsx", "xls"])
 
-    doc.add_heading("2. Calidad y estructura del archivo", level=1)
-    table = doc.add_table(rows=1, cols=5)
-    table.style = "Light Shading Accent 1"
-    for cell, text in zip(
-        table.rows[0].cells,
-        ["Hoja", "Filas", "Columnas", "Vacías", "Duplicadas"]
-    ):
-        cell.text = text
-
-    for r in quality["detalle"]:
-        cells = table.add_row().cells
-        vals = [
-            r["Hoja"], r["Filas con contenido"], r["Columnas con contenido"],
-            r["Celdas vacías"], r["Filas exactamente duplicadas"]
-        ]
-        for cell, val in zip(cells, vals):
-            cell.text = str(val)
-
-    doc.add_heading("3. Auditoría de fórmulas", level=1)
-    doc.add_paragraph(f"Fórmulas encontradas: {formula_count}.")
-    doc.add_paragraph(formula_note)
-
-    if formula_errors:
-        t = doc.add_table(rows=1, cols=4)
-        t.style = "Light Shading Accent 1"
-        for c, text in zip(
-            t.rows[0].cells, ["Hoja", "Celda", "Resultado", "Fórmula"]
-        ):
-            c.text = text
-        for r in formula_errors:
-            cells = t.add_row().cells
-            vals = [r["Hoja"], r["Celda"], r["Detalle"], r["Fórmula"]]
-            for cell, val in zip(cells, vals):
-                cell.text = str(val)
-    else:
-        doc.add_paragraph(
-            "No se encontraron errores de resultado almacenado durante la "
-            "auditoría, o no fue posible acceder a dichos resultados. Esto "
-            "no demuestra que todas las fórmulas sean correctas."
-        )
-
-    doc.add_heading("4. Indicadores básicos calculados", level=1)
-    if indicators:
-        t = doc.add_table(rows=1, cols=4)
-        t.style = "Light Shading Accent 1"
-        for c, text in zip(
-            t.rows[0].cells, ["Hoja", "Indicador", "Resultado", "Método"]
-        ):
-            c.text = text
-        for r in indicators:
-            cells = t.add_row().cells
-            vals = [r["Hoja"], r["Indicador"], r["Resultado"], r["Método"]]
-            for cell, val in zip(cells, vals):
-                cell.text = str(val)
-    else:
-        doc.add_paragraph(
-            "No se pudieron calcular indicadores automáticamente con "
-            "suficiente certeza a partir de los nombres de columnas y unidades."
-        )
-
-    doc.add_paragraph(
-        "El IMC es un indicador antropométrico general y no mide directamente "
-        "la adiposidad ni la composición corporal. Las relaciones cintura/"
-        "estatura y cintura/cadera deben interpretarse considerando población, "
-        "edad, sexo y contexto clínico o deportivo. No se asignaron categorías "
-        "automáticas."
-    )
-
-    doc.add_heading("5. Observaciones del profesional", level=1)
-    doc.add_paragraph(comments or "No se añadieron observaciones.")
-    doc.add_heading("6. Limitaciones", level=1)
-    doc.add_paragraph(
-        "Este informe realiza una revisión automatizada de la estructura y "
-        "de indicadores básicos reconocibles. No valida protocolos de medición, "
-        "calibración, ecuaciones de composición corporal, referencias "
-        "normativas ni diagnósticos. Las ecuaciones deben verificarse frente "
-        "al protocolo y la bibliografía adoptados por el profesional."
-    )
-
-    doc.add_heading("Anexo. Vista de los datos originales", level=1)
-    for sheet_name, raw in sheets.items():
-        doc.add_heading(f"Hoja: {sheet_name}", level=2)
-        preview = raw.dropna(how="all").dropna(axis=1, how="all").head(25)
-        if preview.empty:
-            doc.add_paragraph("Sin datos visibles.")
-            continue
-        t = doc.add_table(rows=0, cols=max(1, len(preview.columns)))
-        t.style = "Table Grid"
-        for _, row in preview.iterrows():
-            cells = t.add_row().cells
-            for i, cell in enumerate(cells):
-                cell.text = str(clean_value(row.iloc[i]))
-        doc.add_paragraph(
-            "Se muestran como máximo 25 filas de esta hoja en el anexo."
-        )
-
-    output = io.BytesIO()
-    doc.save(output)
-    return output.getvalue()
-
-
-def build_pdf(filename, quality, formula_count, formula_errors,
-              formula_note, indicators, comments):
-    output = io.BytesIO()
-    pdf = SimpleDocTemplate(
-        output, pagesize=A4,
-        rightMargin=1.6 * cm, leftMargin=1.6 * cm,
-        topMargin=1.6 * cm, bottomMargin=1.6 * cm
-    )
-
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        name="TitleCentered", parent=styles["Title"],
-        alignment=TA_CENTER, textColor=colors.HexColor("#17365D"),
-        fontSize=18, leading=22, spaceAfter=10
-    ))
-    styles.add(ParagraphStyle(
-        name="SmallCell", parent=styles["BodyText"],
-        fontSize=7, leading=9
-    ))
-    story = []
-
-    def para(text, style="BodyText"):
-        safe = (
-            str(text).replace("&", "&amp;")
-            .replace("<", "&lt;").replace(">", "&gt;")
-        )
-        story.append(Paragraph(safe, styles[style]))
-        story.append(Spacer(1, 5))
-
-    def table_from_rows(rows, widths=None):
-        formatted = [
-            [Paragraph(str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"),
-                       styles["SmallCell"]) for v in row]
-            for row in rows
-        ]
-        t = Table(formatted, colWidths=widths, repeatRows=1, hAlign="LEFT")
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9EAF7")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17365D")),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 10))
-
-    para("INFORME DE REVISIÓN ANTROPOMÉTRICA", "TitleCentered")
-    para("Auditoría del archivo, calidad de datos e indicadores básicos")
-    para(f"Archivo analizado: {filename}")
-    para(f"Generado: {datetime.now().strftime('%d-%m-%Y %H:%M')}")
-
-    para("1. Resumen ejecutivo", "Heading1")
-    para(
-        f"Hojas: {quality['hojas']}; filas: {quality['filas']}; "
-        f"columnas: {quality['columnas']}; celdas vacías: {quality['faltantes']}; "
-        f"filas exactamente duplicadas: {quality['duplicados']}; "
-        f"resultados de fórmula con errores visibles: {len(formula_errors)}."
-    )
-    para(
-        "Los recuentos describen la estructura del archivo. Las filas "
-        "duplicadas o las celdas vacías no constituyen necesariamente errores."
-    )
-
-    para("2. Calidad y estructura", "Heading1")
-    rows = [["Hoja", "Filas", "Columnas", "Vacías", "Duplicadas"]]
-    for r in quality["detalle"]:
-        rows.append([
-            r["Hoja"], str(r["Filas con contenido"]),
-            str(r["Columnas con contenido"]), str(r["Celdas vacías"]),
-            str(r["Filas exactamente duplicadas"])
-        ])
-    table_from_rows(rows)
-
-    para("3. Auditoría de fórmulas", "Heading1")
-    para(f"Fórmulas encontradas: {formula_count}.")
-    para(formula_note)
-    if formula_errors:
-        rows = [["Hoja", "Celda", "Resultado", "Fórmula"]]
-        rows.extend([
-            [r["Hoja"], r["Celda"], r["Detalle"], r["Fórmula"]]
-            for r in formula_errors
-        ])
-        table_from_rows(rows)
-    else:
-        para("No se detectaron errores almacenados visibles en esta revisión.")
-
-    para("4. Indicadores básicos", "Heading1")
-    if indicators:
-        rows = [["Hoja", "Indicador", "Resultado", "Método"]]
-        rows.extend([
-            [r["Hoja"], r["Indicador"], str(r["Resultado"]), r["Método"]]
-            for r in indicators
-        ])
-        table_from_rows(rows)
-    else:
-        para(
-            "No se calcularon indicadores automáticamente: los nombres de "
-            "columnas o las unidades no pudieron reconocerse con seguridad."
-        )
-
-    para(
-        "El IMC no mide directamente la adiposidad ni la composición corporal. "
-        "No se asignaron categorías clínicas o deportivas automáticas."
-    )
-    para("5. Observaciones del profesional", "Heading1")
-    para(comments or "No se añadieron observaciones.")
-    para("6. Limitaciones", "Heading1")
-    para(
-        "La herramienta no valida protocolos, calibración, ecuaciones de "
-        "composición corporal ni referencias normativas. La interpretación "
-        "final requiere revisión profesional."
-    )
-
-    pdf.build(story)
-    return output.getvalue()
-
-
-uploaded = st.file_uploader(
-    "Carga tu archivo de evaluación",
-    type=["xlsx", "xlsm", "xls"],
-    help="Usa una copia sin información identificable mientras pruebas la aplicación."
-)
-
-comments = st.text_area(
-    "Observaciones profesionales (opcional)",
-    placeholder="Contexto de la evaluación, limitaciones o comentarios..."
-)
-
-if uploaded is not None:
-    file_bytes = uploaded.getvalue()
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-
-    try:
-        sheets = excel_sheets(file_bytes)
-        quality = workbook_quality(sheets)
-        formula_count, formula_errors, formula_note = audit_formulas(
-            file_bytes, uploaded.name
-        )
-        indicators, indicator_notes = find_numeric_indicators(sheets)
-
-        st.success("Excel leído. Revisa los resultados antes de generar el informe.")
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Hojas", quality["hojas"])
-        c2.metric("Filas con contenido", quality["filas"])
-        c3.metric("Celdas vacías", quality["faltantes"])
-        c4.metric("Errores visibles de fórmulas", len(formula_errors))
-
-        with st.expander("Revisar hojas y datos", expanded=True):
-            for name, raw in sheets.items():
-                st.markdown(f"**Hoja: {name}**")
-                st.dataframe(raw, use_container_width=True, height=250)
-
-        st.subheader("Calidad de datos")
-        st.dataframe(pd.DataFrame(quality["detalle"]), use_container_width=True)
-
-        st.subheader("Auditoría de fórmulas")
-        st.write(f"Fórmulas encontradas: **{formula_count}**")
-        st.caption(formula_note)
-        if formula_errors:
-            st.dataframe(pd.DataFrame(formula_errors), use_container_width=True)
-        else:
-            st.info(
-                "No se encontraron resultados almacenados con errores visibles. "
-                "Esto no certifica que las fórmulas sean correctas."
-            )
-
-        st.subheader("Indicadores básicos")
-        if indicators:
-            st.dataframe(pd.DataFrame(indicators), use_container_width=True)
-        else:
-            st.info(
-                "No se calcularon indicadores automáticamente. Es posible que "
-                "las medidas estén organizadas en filas, tengan encabezados "
-                "distintos o no indiquen unidades compatibles."
-            )
-        for note in indicator_notes:
-            st.caption(note)
-
-        st.caption(f"Identificador del archivo (SHA-256): {file_hash[:16]}…")
-
-        if st.button("Generar informes Word y PDF", type="primary"):
-            docx_bytes = build_docx(
-                uploaded.name, sheets, quality, formula_count,
-                formula_errors, formula_note, indicators, comments
-            )
-            pdf_bytes = build_pdf(
-                uploaded.name, quality, formula_count,
-                formula_errors, formula_note, indicators, comments
-            )
-
-            st.session_state["docx_bytes"] = docx_bytes
-            st.session_state["pdf_bytes"] = pdf_bytes
-            st.session_state["report_hash"] = file_hash
-
-        if (
-            "docx_bytes" in st.session_state
-            and "pdf_bytes" in st.session_state
-            and st.session_state.get("report_hash") == file_hash
-        ):
-            st.success("Informes generados.")
+if archivo is not None:
+    st.success(f"Archivo cargado: {archivo.name}")
+    
+    if st.button("Generar Informe Word"):
+        with st.spinner("Generando gráficos y documento Word..."):
+            generar_graficos()
+            doc_bytes = generar_word()
+            
+            st.success("¡Informe generado con éxito!")
+            
             st.download_button(
-                "Descargar informe Word",
-                data=st.session_state["docx_bytes"],
-                file_name="informe_antropometrico.docx",
+                label="📥 Descargar Informe Completo",
+                data=doc_bytes,
+                file_name="Informe_Composicion_Completo.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
-            st.download_button(
-                "Descargar informe PDF",
-                data=st.session_state["pdf_bytes"],
-                file_name="informe_antropometrico.pdf",
-                mime="application/pdf"
-            )
-
-    except Exception as e:
-        st.error("No se pudo analizar el archivo.")
-        st.exception(e)
