@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -14,7 +14,7 @@ st.set_page_config(page_title="Informes Antropométricos", page_icon="📊", lay
 st.title("Informes Antropométricos")
 st.subheader("Ciencia aplicada al rendimiento y la salud")
 
-# --- FUNCIONES AUXILIARES ---
+# --- FUNCIONES DE DISEÑO AVANZADO ---
 def set_cell_border(cell, **kwargs):
     """Dibuja bordes específicos y finos en celdas de Word."""
     tc = cell._tc
@@ -35,17 +35,14 @@ def set_cell_border(cell, **kwargs):
                 if key in edge_data:
                     element.set(qn('w:{}'.format(key)), str(edge_data[key]))
 
-def agregar_linea_verde(p):
-    """Agrega un borde inferior verde a un párrafo para simular una línea fina."""
-    pPr = p._p.get_or_add_pPr()
-    pBdr = OxmlElement('w:pBdr')
-    bottom = OxmlElement('w:bottom')
-    bottom.set(qn('w:val'), 'single')
-    bottom.set(qn('w:sz'), '12') # Grosor de la línea
-    bottom.set(qn('w:space'), '1')
-    bottom.set(qn('w:color'), '0F766E')
-    pBdr.append(bottom)
-    pPr.append(pBdr)
+def agregar_caja_conclusion(cell):
+    """Pone el borde verde grueso alrededor de la caja de conclusión."""
+    set_cell_border(cell, 
+        top={"val": "single", "sz": 12, "color": "0F766E"}, 
+        bottom={"val": "single", "sz": 12, "color": "0F766E"},
+        left={"val": "single", "sz": 12, "color": "0F766E"}, 
+        right={"val": "single", "sz": 12, "color": "0F766E"}
+    )
 
 def generar_graficos():
     labels = ['Músculo', 'Grasa', 'Residual', 'Hueso', 'Piel']
@@ -88,7 +85,6 @@ def generar_graficos():
 
 def generar_word():
     doc = Document()
-    # Márgenes más ajustados para que se vea como el PDF
     for section in doc.sections:
         section.top_margin = Inches(0.6)
         section.bottom_margin = Inches(0.6)
@@ -101,11 +97,9 @@ def generar_word():
     header_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     header_p.text = "\n[INSERTAR LOGO AQUÍ]\n" 
     
-    # 1. TÍTULO Y CONTACTO (Dos columnas)
+    # 1. TÍTULO Y CONTACTO
     tabla_top = doc.add_table(rows=1, cols=2)
     tabla_top.autofit = False
-    
-    # Celda Izquierda: Título
     cell_izq = tabla_top.cell(0, 0)
     cell_izq.width = Inches(3.5)
     p_tit = cell_izq.paragraphs[0]
@@ -117,7 +111,6 @@ def generar_word():
     p_sub.runs[0].font.size = Pt(8)
     p_sub.runs[0].font.color.rgb = RGBColor(100, 116, 139)
 
-    # Celda Derecha: Datos del Kinesiólogo
     cell_der = tabla_top.cell(0, 1)
     cell_der.width = Inches(3.5)
     p_der = cell_der.paragraphs[0]
@@ -129,15 +122,21 @@ def generar_word():
     run_kine_2.font.size = Pt(8)
     run_kine_2.italic = True
 
-    # Línea verde separadora
+    # Línea verde
     p_line = doc.add_paragraph()
-    agregar_linea_verde(p_line)
+    pPr = p_line._p.get_or_add_pPr()
+    pBdr = OxmlElement('w:pBdr')
+    bottom = OxmlElement('w:bottom')
+    bottom.set(qn('w:val'), 'single')
+    bottom.set(qn('w:sz'), '12')
+    bottom.set(qn('w:color'), '0F766E')
+    pBdr.append(bottom)
+    pPr.append(pBdr)
     doc.add_paragraph()
 
-    # 2. DATOS DEL PACIENTE
-    t_pac = doc.add_table(rows=3, cols=3)
+    # 2. DATOS PACIENTE
+    t_pac = doc.add_table(rows=2, cols=3)
     t_pac.style = 'Table Grid'
-    t_pac.alignment = WD_TABLE_ALIGNMENT.CENTER
     datos_pac = [
         ["Paciente: Miguel Claro", "Edad: 26.1 años", "Deporte: Baloncesto"],
         ["Fecha: 11/10/2025", "Peso / Talla: 80.0 kg / 178.0 cm", "IMC: 25.2 kg/m²"]
@@ -147,7 +146,6 @@ def generar_word():
             celda = t_pac.cell(i, j)
             celda.text = texto
             celda.paragraphs[0].runs[0].font.size = Pt(8)
-            # Bordes muy sutiles
             set_cell_border(celda, top={"val": "single", "sz": 4, "color": "E2E8F0"}, 
                             bottom={"val": "single", "sz": 4, "color": "E2E8F0"},
                             left={"val": "single", "sz": 4, "color": "E2E8F0"},
@@ -156,19 +154,17 @@ def generar_word():
 
     # 3. TABLA 1: FRACCIONAMIENTO
     doc.add_heading('1. Fraccionamiento Corporal de 5 Componentes (D. Kerr, 1988)', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    
     tabla_1 = doc.add_table(rows=1, cols=4)
-    tabla_1.style = 'Table Grid'
     hdr_1 = tabla_1.rows[0].cells
-    cabeceras_1 = ["Componente", "Resultado", "Referencia", "Interpretación Kinésica"]
-    for i, text in enumerate(cabeceras_1):
+    for i, text in enumerate(["Componente", "Resultado", "Referencia", "Interpretación Kinésica"]):
         hdr_1[i].text = text
         hdr_1[i].paragraphs[0].runs[0].bold = True
         hdr_1[i].paragraphs[0].runs[0].font.size = Pt(8)
-        hdr_1[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(15, 118, 110)
-        # Borde inferior grueso verde, resto fino
-        set_cell_border(hdr_1[i], bottom={"val": "single", "sz": 12, "color": "0F766E"},
-                        top={"val": "nil"}, left={"val": "nil"}, right={"val": "nil"})
+        hdr_1[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+        # Fondo verde en el encabezado
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), "0F766E")
+        hdr_1[i]._tc.get_or_add_tcPr().append(shd)
 
     datos_1 = [
         ("Masa Muscular", "45.8 kg (57.2%)", "50.8% - 54.2%", "Desarrollo muscular sobresaliente."),
@@ -185,29 +181,26 @@ def generar_word():
             row[i].text = text
             row[i].paragraphs[0].runs[0].font.size = Pt(8)
             if i == 0: row[i].paragraphs[0].runs[0].bold = True
-            set_cell_border(row[i], top={"val": "nil"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
+            set_cell_border(row[i], top={"val": "single", "sz": 4, "color": "E2E8F0"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
     
     doc.add_paragraph()
-
-    # Gráfico de Torta
     p_torta = doc.add_paragraph()
     p_torta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_torta.add_run().add_picture('grafico_torta.png', width=Inches(3.5))
 
     # 4. TABLA 2: SOMATOTIPO
-    doc.add_page_break() # Salto de página para que quepa todo bien
-    
+    doc.add_page_break()
     doc.add_heading('2. Análisis de Somatotipo y Perfil Morfológico', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
     tabla_2 = doc.add_table(rows=1, cols=4)
-    tabla_2.style = 'Table Grid'
     hdr_2 = tabla_2.rows[0].cells
-    cabeceras_2 = ["Componente", "Valor", "Ref. Deporte", "Clasificación"]
-    for i, text in enumerate(cabeceras_2):
+    for i, text in enumerate(["Componente", "Valor", "Ref. Deporte", "Clasificación"]):
         hdr_2[i].text = text
         hdr_2[i].paragraphs[0].runs[0].bold = True
         hdr_2[i].paragraphs[0].runs[0].font.size = Pt(8)
-        hdr_2[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(15, 118, 110)
-        set_cell_border(hdr_2[i], bottom={"val": "single", "sz": 12, "color": "0F766E"}, top={"val": "nil"}, left={"val": "nil"}, right={"val": "nil"})
+        hdr_2[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), "0F766E")
+        hdr_2[i]._tc.get_or_add_tcPr().append(shd)
 
     datos_2 = [
         ("Endomorfia", "1.4", "2.1 (Mod.)", "Baja acumulación subcutánea."),
@@ -221,11 +214,9 @@ def generar_word():
             row[i].text = text
             row[i].paragraphs[0].runs[0].font.size = Pt(8)
             if i == 0: row[i].paragraphs[0].runs[0].bold = True
-            set_cell_border(row[i], top={"val": "nil"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
+            set_cell_border(row[i], top={"val": "single", "sz": 4, "color": "E2E8F0"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
 
     doc.add_paragraph()
-    
-    # Gráfico Somatocarta
     p_soma = doc.add_paragraph()
     p_soma.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_soma.add_run().add_picture('somatocarta.png', width=Inches(4.0))
@@ -233,15 +224,15 @@ def generar_word():
     # 5. TABLA 3: CARDIOMETABÓLICO
     doc.add_heading('3. Indicadores Cardiometabólicos', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
     tabla_3 = doc.add_table(rows=1, cols=4)
-    tabla_3.style = 'Table Grid'
     hdr_3 = tabla_3.rows[0].cells
-    cabeceras_3 = ["Indicador", "Resultado", "Referencia", "Observación Kinésica"]
-    for i, text in enumerate(cabeceras_3):
+    for i, text in enumerate(["Indicador", "Resultado", "Referencia", "Observación Kinésica"]):
         hdr_3[i].text = text
         hdr_3[i].paragraphs[0].runs[0].bold = True
         hdr_3[i].paragraphs[0].runs[0].font.size = Pt(8)
-        hdr_3[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(15, 118, 110)
-        set_cell_border(hdr_3[i], bottom={"val": "single", "sz": 12, "color": "0F766E"}, top={"val": "nil"}, left={"val": "nil"}, right={"val": "nil"})
+        hdr_3[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), "0F766E")
+        hdr_3[i]._tc.get_or_add_tcPr().append(shd)
 
     datos_3 = [
         ("Índice Cintura / Cadera", "0.78", "< 0.83", "Riesgo cardiovascular bajo."),
@@ -255,21 +246,42 @@ def generar_word():
             row[i].text = text
             row[i].paragraphs[0].runs[0].font.size = Pt(8)
             if i == 0: row[i].paragraphs[0].runs[0].bold = True
-            set_cell_border(row[i], top={"val": "nil"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
-    
-    doc.add_paragraph()
+            set_cell_border(row[i], top={"val": "single", "sz": 4, "color": "E2E8F0"}, bottom={"val": "single", "sz": 4, "color": "E2E8F0"}, left={"val": "nil"}, right={"val": "nil"})
 
-    # 6. CONCLUSIÓN
-    doc.add_heading('4. Conclusión y Recomendaciones', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
-    p_interp = doc.add_paragraph(
-        "El evaluado presenta una composición corporal altamente eficiente para el rendimiento deportivo, destacando un desarrollo muscular sobresaliente (57.2%) e índices de adiposidad mínimos (15.4%). "
-        "Su perfil somatotípico se clasifica como Mesomorfo Puro (1.4-8.1-1.7).\n\n"
+    # 6. CONCLUSIÓN (Con recuadro verde)
+    doc.add_paragraph()
+    doc.add_heading('4. Conclusión Fisiológica y Recomendaciones de Carga', level=2).runs[0].font.color.rgb = RGBColor(15, 118, 110)
+    
+    tabla_concl = doc.add_table(rows=1, cols=1)
+    cell_concl = tabla_concl.cell(0, 0)
+    agregar_caja_conclusion(cell_concl) # Pinta el borde verde
+    
+    p_diag = cell_concl.paragraphs[0]
+    run_diag = p_diag.add_run("Diagnóstico Kinésico-Antropométrico:\n")
+    run_diag.bold = True
+    run_diag.font.size = Pt(9)
+    run_diag.font.color.rgb = RGBColor(15, 118, 110)
+    
+    p_texto = cell_concl.add_paragraph(
+        "El evaluado presenta una composición corporal altamente eficiente para el rendimiento deportivo, destacando un desarrollo muscular sobresaliente (57.2% de masa muscular total) e índices de adiposidad mínimos (15.4%). "
+        "Su perfil somatotípico se clasifica como Mesomorfo Puro (1.4-8.1-1.7), lo que le otorga una ventaja mecánica notable para deportes de fuerza, potencia y aceleración."
+    )
+    p_texto.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_texto.runs[0].font.size = Pt(9)
+
+    p_recom = cell_concl.add_paragraph()
+    run_recom = p_recom.add_run("\nRecomendaciones de Prescripción & Nutrición:\n")
+    run_recom.bold = True
+    run_recom.font.size = Pt(9)
+    run_recom.font.color.rgb = RGBColor(15, 118, 110)
+    
+    p_items = cell_concl.add_paragraph(
         "1. Mantenimiento Estructural: Preservar la masa muscular activa mediante sobrecarga progresiva.\n"
         "2. Soporte Energético: Ajustar la ingesta calórica al GET (~3782 kcal/día).\n"
-        "3. Monitoreo: Reevaluar en 8 a 12 semanas."
+        "3. Monitoreo Fisiológico: Reevaluar en un período de 8 a 12 semanas."
     )
-    p_interp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    p_interp.runs[0].font.size = Pt(9)
+    p_items.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_items.runs[0].font.size = Pt(9)
 
     # Firma
     doc.add_paragraph("\n")
